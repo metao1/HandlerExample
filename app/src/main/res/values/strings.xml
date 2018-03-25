@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">HandlerExample</string>
+    <string name="download">DOWNLOAD</string>
+    <string name="cancel">CANCEL</string>
+</resources>
