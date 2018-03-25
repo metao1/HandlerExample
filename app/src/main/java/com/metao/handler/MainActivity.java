@@ -1,10 +1,12 @@
 package com.metao.handler;
 
+import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.Handler;
 import android.os.Message;
 import android.os.Parcelable;
+import android.preference.PreferenceManager;
 import android.support.v4.app.NavUtils;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
@@ -47,6 +49,24 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         download.setOnClickListener(this);
         cancel.setOnClickListener(this);
         globalHandler = new GlobalHandler(this);
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(this);
+        if (preferences.contains("counter")) {
+            counter = preferences.getInt("counter", counter);
+        }
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(this);
+        SharedPreferences.Editor edit = preferences.edit();
+        edit.putInt("counter", counter);
+        edit.apply();
     }
 
     @Override
