@@ -3,18 +3,23 @@ package com.metao.handler;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.drawable.Drawable;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
-import android.os.Parcelable;
 import android.preference.PreferenceManager;
-import android.support.v4.app.NavUtils;
+import android.support.design.widget.FloatingActionButton;
 import android.support.v7.app.AppCompatActivity;
-import android.os.Bundle;
 import android.view.View;
-import android.widget.Button;
+import android.view.Window;
+import android.view.WindowManager;
+import android.view.animation.Animation;
+import android.view.animation.AnimationUtils;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
 import android.widget.Toast;
+
+import com.metao.handler.utils.Utils;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -27,36 +32,65 @@ import java.util.TimerTask;
 
 public class MainActivity extends AppCompatActivity implements View.OnClickListener {
 
-    private ProgressBar progressBar;
-    private Button download;
-    private Button cancel;
-    private ImageView image;
-    private GlobalHandler globalHandler;
     private static final int DOWNLOAD = 1;
     private static final int ERROR = 2;
+    private static final String TAG = MainActivity.class.getCanonicalName();
+    private GlobalHandler globalHandler;
+    private ProgressBar progressBar;
+    private FloatingActionButton play;
+    private FloatingActionButton stop;
+    private ImageView image;
     private Timer timer;
     private int counter;
     private boolean locked;
+    private int width, height;
+    private int from, to = 100;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        requestWindowFeature(Window.FEATURE_NO_TITLE);
+        getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
+                WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
         setContentView(R.layout.activity_main);
-        progressBar = (ProgressBar) findViewById(R.id.progress);
-        download = (Button) findViewById(R.id.download);
-        cancel = (Button) findViewById(R.id.cancel);
-        image = (ImageView) findViewById(R.id.image);
-        download.setOnClickListener(this);
-        cancel.setOnClickListener(this);
-        globalHandler = new GlobalHandler(this);
+        progressBar = findViewById(R.id.progress);
+        Drawable draw = getResources().getDrawable(R.drawable.progress_bar);
+        progressBar.setProgressDrawable(draw);
+        play = findViewById(R.id.play);
+        stop = findViewById(R.id.stop);
+        image = findViewById(R.id.image);
+        play.setOnClickListener(this);
+        stop.setOnClickListener(this);
+    }
+
+    @Override
+    public void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putInt("counter", counter);
     }
 
     @Override
     protected void onStart() {
         super.onStart();
+        if (globalHandler != null) {
+            stop();
+        } else {
+            globalHandler = new GlobalHandler(this);
+        }
+        width = Utils.getDisplayDimens(this).x;
+        height = Utils.getDisplayDimens(this).y;
         SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(this);
         if (preferences.contains("counter")) {
             counter = preferences.getInt("counter", counter);
+        }
+    }
+
+    private void stop() {
+        globalHandler.removeCallbacks(null);
+        if (timer != null) {
+            timer.cancel();
         }
     }
 
@@ -67,18 +101,19 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         SharedPreferences.Editor edit = preferences.edit();
         edit.putInt("counter", counter);
         edit.apply();
+        stop();
     }
 
     @Override
     public void onClick(View v) {
         switch (v.getId()) {
-            case R.id.cancel:
+            case R.id.stop:
                 if (timer != null) {
                     timer.cancel();
                     timer = null;
                 }
                 break;
-            case R.id.download:
+            case R.id.play:
                 if (timer == null) {
                     timer = new Timer();
                     final TimerTask timerTask = new TimerTask() {
@@ -88,14 +123,34 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                                 @Override
                                 public void run() {
                                     progressBar.setVisibility(View.VISIBLE);
+                                    ProgressBarAnimation anim = new ProgressBarAnimation(progressBar, from, to);
+                                    if (from == 100) {
+                                        from = 0;
+                                    } else {
+                                        from = 100;
+                                    }
+                                    if (to == 100) {
+                                        to = 0;
+                                    } else {
+                                        to = 100;
+                                    }
+                                    anim.setDuration(1000);
+                                    progressBar.startAnimation(anim);
                                 }
                             });
                             if (!locked) {
-                                new ThreadHandler("https://picsum.photos/600/800/?image=" + counter++).start();
+                                runOnUiThread(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        Animation animation = AnimationUtils.loadAnimation(MainActivity.this, R.anim.fade_out);
+                                        image.startAnimation(animation);
+                                    }
+                                });
+                                new ThreadHandler("https://picsum.photos/" + width + "/" + height + "/?image=" + counter++).start();
                             }
                         }
                     };
-                    timer.scheduleAtFixedRate(timerTask, 400, 2000);
+                    timer.scheduleAtFixedRate(timerTask, 400, 5000);
                     break;
                 }
         }
@@ -104,12 +159,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        if (timer != null) {
-            timer.cancel();
-        }
-        if (globalHandler != null) {
-            globalHandler.removeCallbacks(null);
-        }
+        stop();
     }
 
     public void setError(String message) {
@@ -117,10 +167,64 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
     }
 
-    public void setImage(Bitmap image) {
+    public void setImage(final Bitmap bitmap) {
         progressBar.setVisibility(View.GONE);
-        this.image.setImageBitmap(image);
         this.image.setVisibility(View.VISIBLE);
+        Animation animation = AnimationUtils.loadAnimation(MainActivity.this, R.anim.fade_in);
+        animation.setAnimationListener(new Animation.AnimationListener() {
+            @Override
+            public void onAnimationStart(Animation animation) {
+                image.setImageBitmap(bitmap);
+            }
+
+            @Override
+            public void onAnimationEnd(Animation animation) {
+            }
+
+            @Override
+            public void onAnimationRepeat(Animation animation) {
+
+            }
+        });
+        image.startAnimation(animation);
+    }
+
+    private final static class GlobalHandler extends Handler {
+
+        WeakReference<MainActivity> wr;
+
+        GlobalHandler(MainActivity reference) {
+            wr = new WeakReference<>(reference);
+        }
+
+        @Override
+        public void dispatchMessage(Message msg) {
+            if (msg != null) {
+                switch (msg.what) {
+                    case DOWNLOAD:
+                        Bundle data = msg.getData();
+                        if (data != null) {
+                            Bitmap bitmap = data.getParcelable("image");
+                            if (bitmap != null) {
+                                MainActivity mainActivity = wr.get();
+                                if (mainActivity != null) {
+                                    mainActivity.setImage(bitmap);
+                                }
+                            }
+                        }
+                        break;
+                    case ERROR:
+                        data = msg.getData();
+                        if (data != null) {
+                            String message = data.getString("message");
+                            MainActivity mainActivity = wr.get();
+                            if (mainActivity != null) {
+                                mainActivity.setError(message);
+                            }
+                        }
+                }
+            }
+        }
     }
 
     private class ThreadHandler extends Thread {
@@ -164,7 +268,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 e.printStackTrace();
                 printError(String.valueOf(e.getMessage()));
             } finally {
-                globalHandler.sendMessage(message);
+                if (globalHandler != null) {
+                    globalHandler.sendMessage(message);
+                }
                 locked = false;
             }
         }
@@ -174,40 +280,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             message = globalHandler.obtainMessage(ERROR);
             bundle.putString("message", messageString);
             message.setData(bundle);
-        }
-    }
-
-    private final static class GlobalHandler extends Handler {
-
-        WeakReference<MainActivity> wr;
-
-        GlobalHandler(MainActivity reference) {
-            wr = new WeakReference<>(reference);
-        }
-
-        @Override
-        public void dispatchMessage(Message msg) {
-            if (msg != null) {
-                switch (msg.what) {
-                    case DOWNLOAD:
-                        Bundle data = msg.getData();
-                        if (data != null) {
-                            Bitmap bitmap = data.getParcelable("image");
-                            if (bitmap != null) {
-                                MainActivity mainActivity = wr.get();
-                                mainActivity.setImage(bitmap);
-                            }
-                        }
-                        break;
-                    case ERROR:
-                        data = msg.getData();
-                        if (data != null) {
-                            String message = data.getString("message");
-                            MainActivity mainActivity = wr.get();
-                            mainActivity.setError(message);
-                        }
-                }
-            }
         }
     }
 }
