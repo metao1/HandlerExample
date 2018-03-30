@@ -1,14 +1,21 @@
 package com.metao.handler;
 
+import android.Manifest;
+import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.drawable.Drawable;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
 import android.preference.PreferenceManager;
+import android.support.annotation.NonNull;
 import android.support.design.widget.FloatingActionButton;
+import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.view.View;
 import android.view.Window;
@@ -35,10 +42,10 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private static final int DOWNLOAD = 1;
     private static final int ERROR = 2;
     private static final String TAG = MainActivity.class.getCanonicalName();
+    private static final int REQUEST_CODE = 0x1;
     private GlobalHandler globalHandler;
     private ProgressBar progressBar;
-    private FloatingActionButton play;
-    private FloatingActionButton stop;
+    private FloatingActionButton play, stop, share;
     private ImageView image;
     private Timer timer;
     private int counter;
@@ -61,8 +68,10 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         play = findViewById(R.id.play);
         stop = findViewById(R.id.stop);
         image = findViewById(R.id.image);
+        share = findViewById(R.id.share);
         play.setOnClickListener(this);
         stop.setOnClickListener(this);
+        share.setOnClickListener(this);
     }
 
     @Override
@@ -88,10 +97,25 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     }
 
     private void stop() {
-        globalHandler.removeCallbacks(null);
+        if (globalHandler != null) {
+            globalHandler.removeCallbacks(null);
+        }
         if (timer != null) {
             timer.cancel();
+            timer = null;
         }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        stop();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        start();
     }
 
     @Override
@@ -108,52 +132,96 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     public void onClick(View v) {
         switch (v.getId()) {
             case R.id.stop:
-                if (timer != null) {
-                    timer.cancel();
-                    timer = null;
-                }
+                stop();
                 break;
             case R.id.play:
-                if (timer == null) {
-                    timer = new Timer();
-                    final TimerTask timerTask = new TimerTask() {
-                        @Override
-                        public void run() {
-                            runOnUiThread(new Runnable() {
-                                @Override
-                                public void run() {
-                                    progressBar.setVisibility(View.VISIBLE);
-                                    ProgressBarAnimation anim = new ProgressBarAnimation(progressBar, from, to);
-                                    if (from == 100) {
-                                        from = 0;
-                                    } else {
-                                        from = 100;
-                                    }
-                                    if (to == 100) {
-                                        to = 0;
-                                    } else {
-                                        to = 100;
-                                    }
-                                    anim.setDuration(1000);
-                                    progressBar.startAnimation(anim);
-                                }
-                            });
-                            if (!locked) {
-                                runOnUiThread(new Runnable() {
-                                    @Override
-                                    public void run() {
-                                        Animation animation = AnimationUtils.loadAnimation(MainActivity.this, R.anim.fade_out);
-                                        image.startAnimation(animation);
-                                    }
-                                });
-                                new ThreadHandler("https://picsum.photos/" + width + "/" + height + "/?image=" + counter++).start();
-                            }
-                        }
-                    };
-                    timer.scheduleAtFixedRate(timerTask, 400, 5000);
-                    break;
-                }
+                start();
+                break;
+            case R.id.share:
+                shareIt();
+                break;
         }
+    }
+
+    private void start() {
+        if (timer == null) {
+            timer = new Timer();
+            final TimerTask timerTask = new TimerTask() {
+                @Override
+                public void run() {
+                    runProgress();
+                    if (!locked) {
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                Animation animation = AnimationUtils.loadAnimation(MainActivity.this, R.anim.fade_out);
+                                image.startAnimation(animation);
+                            }
+                        });
+                        new ThreadHandler("https://picsum.photos/" + width + "/" + height + "/?image=" + counter++).start();
+                    }
+                }
+            };
+            timer.scheduleAtFixedRate(timerTask, 400, 5000);
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        if (requestCode == REQUEST_CODE && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            shareImage();
+        }
+    }
+
+    private void shareIt() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                    == PackageManager.PERMISSION_GRANTED) {
+                shareImage();
+            } else {
+                ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQUEST_CODE);
+            }
+        }
+    }
+
+    private void shareImage() {
+        image.buildDrawingCache();
+        String type = "image/*";
+        Uri bmpUri = Utils.getLocalBitmapUri(image);
+        Intent share = new Intent(Intent.ACTION_SEND);
+        if (Utils.isPackageExisted(MainActivity.this, "com.instagram.android")) {
+            share.setPackage("com.instagram.android");
+        }
+        if (bmpUri != null) {
+            if (Utils.isPackageExisted(MainActivity.this, "com.instagram.android")) {
+                share.setPackage("com.instagram.android");
+            }
+            share.setType(type);
+            share.putExtra(Intent.EXTRA_STREAM, bmpUri);
+            startActivity(Intent.createChooser(share, "Share to"));
+        }
+    }
+
+    private void runProgress() {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                progressBar.setVisibility(View.VISIBLE);
+                ProgressBarAnimation anim = new ProgressBarAnimation(progressBar, from, to);
+                if (from == 100) {
+                    from = 0;
+                } else {
+                    from = 100;
+                }
+                if (to == 100) {
+                    to = 0;
+                } else {
+                    to = 100;
+                }
+                anim.setDuration(1000);
+                progressBar.startAnimation(anim);
+            }
+        });
     }
 
     @Override
@@ -163,12 +231,14 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     }
 
     public void setError(String message) {
-        progressBar.setVisibility(View.GONE);
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
     }
 
     public void setImage(final Bitmap bitmap) {
         progressBar.setVisibility(View.GONE);
+        if (share.getVisibility() == View.INVISIBLE) {
+            share.setVisibility(View.VISIBLE);
+        }
         this.image.setVisibility(View.VISIBLE);
         Animation animation = AnimationUtils.loadAnimation(MainActivity.this, R.anim.fade_in);
         animation.setAnimationListener(new Animation.AnimationListener() {
