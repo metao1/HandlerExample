@@ -45,7 +45,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private static final int REQUEST_CODE = 0x1;
     private GlobalHandler globalHandler;
     private ProgressBar progressBar;
-    private FloatingActionButton play, stop, share;
+    private FloatingActionButton play, stop, share, back;
     private ImageView image;
     private Timer timer;
     private int counter;
@@ -69,9 +69,11 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         stop = findViewById(R.id.stop);
         image = findViewById(R.id.image);
         share = findViewById(R.id.share);
+        back = findViewById(R.id.back);
         play.setOnClickListener(this);
         stop.setOnClickListener(this);
         share.setOnClickListener(this);
+        back.setOnClickListener(this);
     }
 
     @Override
@@ -115,7 +117,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     @Override
     protected void onResume() {
         super.onResume();
-        start();
+        if (timer != null) {
+            start();
+        }
     }
 
     @Override
@@ -140,7 +144,16 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             case R.id.share:
                 shareIt();
                 break;
+            case R.id.back:
+                goBack();
+                break;
         }
+    }
+
+    private void goBack() {
+        stop();
+        counter -= 2;
+        start();
     }
 
     private void start() {
@@ -239,7 +252,15 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         if (share.getVisibility() == View.INVISIBLE) {
             share.setVisibility(View.VISIBLE);
         }
-        this.image.setVisibility(View.VISIBLE);
+        if (stop.getVisibility() == View.INVISIBLE) {
+            stop.setVisibility(View.VISIBLE);
+        }
+        if (image.getVisibility() == View.INVISIBLE) {
+            image.setVisibility(View.VISIBLE);
+        }
+        if (back.getVisibility() == View.INVISIBLE) {
+            back.setVisibility(View.VISIBLE);
+        }
         Animation animation = AnimationUtils.loadAnimation(MainActivity.this, R.anim.fade_in);
         animation.setAnimationListener(new Animation.AnimationListener() {
             @Override
